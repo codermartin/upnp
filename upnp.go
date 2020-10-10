@@ -1,9 +1,8 @@
 package upnp
 
 import (
-	// "fmt"
 	"errors"
-	"log"
+	"fmt"
 	"sync"
 )
 
@@ -11,41 +10,39 @@ import (
  * 得到网关
  */
 
+type PortMapping struct {
+	localPort   int
+	remotePort  int
+	protocol    string
+	description string
+}
+
 //对所有的端口进行管理
 type MappingPortStruct struct {
 	lock         *sync.Mutex
-	mappingPorts map[string][][]int
+	mappingPorts map[string][]PortMapping
 }
 
 //添加一个端口映射记录
 //只对映射进行管理
-func (this *MappingPortStruct) addMapping(localPort, remotePort int, protocol string) {
+func (this *MappingPortStruct) addMapping(localPort, remotePort int, protocol string, description string) {
 
 	this.lock.Lock()
 	defer this.lock.Unlock()
 	if this.mappingPorts == nil {
-		one := make([]int, 0)
-		one = append(one, localPort)
-		two := make([]int, 0)
-		two = append(two, remotePort)
-		portMapping := [][]int{one, two}
-		this.mappingPorts = map[string][][]int{protocol: portMapping}
-		return
+		this.mappingPorts = map[string][]PortMapping{}
 	}
-	portMapping := this.mappingPorts[protocol]
-	if portMapping == nil {
-		one := make([]int, 0)
-		one = append(one, localPort)
-		two := make([]int, 0)
-		two = append(two, remotePort)
-		this.mappingPorts[protocol] = [][]int{one, two}
-		return
+	portMappings := this.mappingPorts[protocol]
+	for i := 0; i < len(portMappings); i++ {
+		portMapping := portMappings[i]
+		if portMapping.localPort == localPort && portMapping.remotePort == remotePort {
+			return
+		}
 	}
-	one := portMapping[0]
-	two := portMapping[1]
-	one = append(one, localPort)
-	two = append(two, remotePort)
-	this.mappingPorts[protocol] = [][]int{one, two}
+
+	portMapping := PortMapping{localPort: localPort, remotePort: remotePort, protocol: protocol, description: description}
+	fmt.Println("add port mapping", portMapping)
+	this.mappingPorts[protocol] = append(portMappings, portMapping)
 }
 
 //删除一个映射记录
@@ -56,18 +53,18 @@ func (this *MappingPortStruct) delMapping(remotePort int, protocol string) {
 	if this.mappingPorts == nil {
 		return
 	}
-	tmp := MappingPortStruct{lock: new(sync.Mutex)}
+	tmp := []PortMapping{}
 	mappings := this.mappingPorts[protocol]
-	for i := 0; i < len(mappings[0]); i++ {
-		if mappings[1][i] == remotePort {
+	for i := 0; i < len(mappings); i++ {
+		if mappings[i].remotePort == remotePort {
 			//要删除的映射
-			break
+			continue
 		}
-		tmp.addMapping(mappings[0][i], mappings[1][i], protocol)
+		tmp = append(tmp, mappings[i])
 	}
-	this.mappingPorts = tmp.mappingPorts
+	this.mappingPorts[protocol] = tmp
 }
-func (this *MappingPortStruct) GetAllMapping() map[string][][]int {
+func (this *MappingPortStruct) GetAllMapping() map[string][]PortMapping {
 	return this.mappingPorts
 }
 
@@ -88,7 +85,7 @@ type Upnp struct {
 func (this *Upnp) SearchGateway() (err error) {
 	defer func(err error) {
 		if errTemp := recover(); errTemp != nil {
-			log.Println("upnp模块报错了", errTemp)
+			fmt.Println("upnp模块报错了", errTemp)
 			err = errTemp.(error)
 		}
 	}(err)
@@ -121,7 +118,7 @@ func (this *Upnp) deviceDesc() (err error) {
 	device := DeviceDesc{upnp: this}
 	device.Send()
 	this.Active = true
-	// log.Println("获得控制请求url:", this.CtrlUrl)
+	fmt.Println("获得控制请求url:", this.CtrlUrl)
 	return
 }
 
@@ -134,15 +131,15 @@ func (this *Upnp) ExternalIPAddr() (err error) {
 	}
 	eia := ExternalIPAddress{upnp: this}
 	eia.Send()
+	fmt.Println("获得公网ip地址为：", this.GatewayOutsideIP)
 	return nil
-	// log.Println("获得公网ip地址为：", this.GatewayOutsideIP)
 }
 
 //添加一个端口映射
-func (this *Upnp) AddPortMapping(localPort, remotePort int, protocol string) (err error) {
+func (this *Upnp) AddPortMapping(localPort, remotePort int, protocol, description string) (err error) {
 	defer func(err error) {
 		if errTemp := recover(); errTemp != nil {
-			log.Println("upnp模块报错了", errTemp)
+			fmt.Println("upnp模块报错了", errTemp)
 			err = errTemp.(error)
 		}
 	}(err)
@@ -151,14 +148,15 @@ func (this *Upnp) AddPortMapping(localPort, remotePort int, protocol string) (er
 			return err
 		}
 	}
+	this.DelPortMapping(remotePort, protocol)
 	addPort := AddPortMapping{upnp: this}
-	if issuccess := addPort.Send(localPort, remotePort, protocol); issuccess {
-		this.MappingPort.addMapping(localPort, remotePort, protocol)
-		// log.Println("添加一个端口映射：protocol:", protocol, "local:", localPort, "remote:", remotePort)
+	if issuccess := addPort.Send(localPort, remotePort, protocol, description); issuccess {
+		this.MappingPort.addMapping(localPort, remotePort, protocol, description)
+		fmt.Println("添加一个端口映射：protocol:", protocol, "local:", localPort, "remote:", remotePort)
 		return nil
 	} else {
 		this.Active = false
-		// log.Println("添加一个端口映射失败")
+		fmt.Println("添加一个端口映射失败")
 		return errors.New("添加一个端口映射失败")
 	}
 }
@@ -168,7 +166,7 @@ func (this *Upnp) DelPortMapping(remotePort int, protocol string) bool {
 	issuccess := delMapping.Send(remotePort, protocol)
 	if issuccess {
 		this.MappingPort.delMapping(remotePort, protocol)
-		log.Println("删除了一个端口映射： remote:", remotePort)
+		fmt.Println("删除了一个端口映射： remote:", remotePort)
 	}
 	return issuccess
 }
@@ -178,18 +176,18 @@ func (this *Upnp) Reclaim() {
 	mappings := this.MappingPort.GetAllMapping()
 	tcpMapping, ok := mappings["TCP"]
 	if ok {
-		for i := 0; i < len(tcpMapping[0]); i++ {
-			this.DelPortMapping(tcpMapping[1][i], "TCP")
+		for i := 0; i < len(tcpMapping); i++ {
+			this.DelPortMapping(tcpMapping[i].remotePort, "TCP")
 		}
 	}
 	udpMapping, ok := mappings["UDP"]
 	if ok {
-		for i := 0; i < len(udpMapping[0]); i++ {
-			this.DelPortMapping(udpMapping[0][i], "UDP")
+		for i := 0; i < len(udpMapping); i++ {
+			this.DelPortMapping(udpMapping[i].remotePort, "UDP")
 		}
 	}
 }
 
-func (this *Upnp) GetAllMapping() map[string][][]int {
+func (this *Upnp) GetAllMapping() map[string][]PortMapping {
 	return this.MappingPort.GetAllMapping()
 }

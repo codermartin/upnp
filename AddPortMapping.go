@@ -3,6 +3,7 @@ package upnp
 import (
 	// "log"
 	// "fmt"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -13,17 +14,18 @@ type AddPortMapping struct {
 	upnp *Upnp
 }
 
-func (this *AddPortMapping) Send(localPort, remotePort int, protocol string) bool {
-	request := this.buildRequest(localPort, remotePort, protocol)
+func (this *AddPortMapping) Send(localPort, remotePort int, protocol, description string) bool {
+	request := this.buildRequest(localPort, remotePort, protocol, description)
 	response, _ := http.DefaultClient.Do(request)
 	resultBody, _ := ioutil.ReadAll(response.Body)
 	if response.StatusCode == 200 {
 		this.resolve(string(resultBody))
 		return true
 	}
+	fmt.Println(string(resultBody))
 	return false
 }
-func (this *AddPortMapping) buildRequest(localPort, remotePort int, protocol string) *http.Request {
+func (this *AddPortMapping) buildRequest(localPort, remotePort int, protocol, description string) *http.Request {
 	//请求头
 	header := http.Header{}
 	header.Set("Accept", "text/html, image/gif, image/jpeg, *; q=.2, */*; q=.2")
@@ -44,8 +46,8 @@ func (this *AddPortMapping) buildRequest(localPort, remotePort int, protocol str
 	childList3 := Node{Name: "NewProtocol", Content: protocol}
 	childList4 := Node{Name: "NewEnabled", Content: "1"}
 	childList5 := Node{Name: "NewInternalClient", Content: this.upnp.LocalHost}
-	childList6 := Node{Name: "NewLeaseDuration", Content: "0"}
-	childList7 := Node{Name: "NewPortMappingDescription", Content: "mandela"}
+	childList6 := Node{Name: "NewLeaseDuration", Content: "100"}
+	childList7 := Node{Name: "NewPortMappingDescription", Content: description}
 	childList8 := Node{Name: "NewRemoteHost"}
 	childTwo.AddChild(childList1)
 	childTwo.AddChild(childList2)

@@ -1,7 +1,9 @@
 package upnp
 
 import (
+	"fmt"
 	"io/ioutil"
+
 	// "log"
 	"net/http"
 	"strconv"
@@ -21,6 +23,7 @@ func (this *DelPortMapping) Send(remotePort int, protocol string) bool {
 		this.resolve(string(resultBody))
 		return true
 	}
+	fmt.Println(string(resultBody))
 	return false
 }
 func (this *DelPortMapping) buildRequest(remotePort int, protocol string) *http.Request {
